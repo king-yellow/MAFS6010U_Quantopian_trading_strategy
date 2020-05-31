@@ -1,0 +1,63 @@
+# This is a demonstration of how to keep account leverage limited to 2.5x  
+# 2.5X is the limit set for the Quantopian Open.
+# The algorithm is a price-momentum type.
+
+def initialize(context):
+    # create the universe of securities
+    context.stocks = symbols('FSLR', 'CREE', 'GRPN', 'NFLX', 'GMCR')  # a few volatile stocks
+    
+    # allocate equal weights to each stock
+    # lever the portfolio to 2.45X
+    context.weight = 2.45/len(context.stocks) 
+    context.entered_short = False
+    context.leverage_buffer = 2.5
+    schedule_function(
+        func=monthly_rebal,
+        date_rule=date_rules.month_start(),
+        time_rule=time_rules.market_close(minutes=1),
+        half_days=True
+      )
+    
+    
+# Will be called on every bar for the securities you specify. 
+def handle_data(context, data):
+    
+    # Track the algorithm's leverage, and put it on the custom graph
+    leverage = context.account.leverage
+    
+    record(leverage=leverage)
+    
+    # order_target functions don't consider open orders when making calculations.
+    # Add this guard to prevent over-ordering
+    if get_open_orders():
+        return
+    
+    for stock in data:
+        # Check the account leverage, leaving a buffer for open orders
+        # Liquidate the short position if the leverage is approaching the 2.5x limit
+        if leverage > context.leverage_buffer:
+            log.info("Approaching leverage limit. Current leverage is %s" % (leverage))
+
+            # Need to liquidate short position
+            if context.entered_short == True:
+                log.info("Liquidating position %s" % (stock))
+                order_target_percent(stock, 0)
+            return
+        
+def monthly_rebal(context, data):
+    for stock in data:    
+        # Use history to store the last 100 days of daily pricing to a pandas dataframe
+        trailing_prices = history(100, '1d', 'price')[stock]
+        slowMA = trailing_prices.mean()
+
+        # Define the fast moving average window to use only the last 20 days of historical pricing
+        fastMA = trailing_prices[-21:-1].mean() 
+    
+        # Sell short if the fast moving average is below the slow moving average
+        if fastMA < slowMA:
+            order_target_percent(stock,context.weight)
+        
+        elif fastMA >= slowMA:
+            #Go long if the fast moving average is equal to or above the slow moving average
+            order_target_percent(stock,context.weight)
+            context.entered_short = True

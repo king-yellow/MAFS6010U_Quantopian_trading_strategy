@@ -1,0 +1,37 @@
+#Momentum
+
+
+def initialize(context):
+    context.spy = sid(8554)
+    context.aapl = sid(24)
+    context.trends = []
+    schedule_function(
+        handle_trading,
+        date_rules.every_day(),
+        time_rules.market_open(hours=1),
+        half_days=False
+    )
+    
+def get_uptrend(context, data):
+    spy_hist = data.history(context.spy, 'price', 200, '1d')
+    spy_sma = spy_hist.mean()
+    if spy_hist[-1] > spy_sma:
+        return True
+    return False
+
+def handle_trading(context, data):
+    open_orders = get_open_orders()
+    trend = get_uptrend(context, data)
+    context.trends.append(trend)
+    hist = data.history(context.aapl, 'price', 50, '1d')
+    sma_50 = hist.mean()
+    sma_20 = hist[-20:].mean()
+    if context.trends[-1] == False and context.trends[-2] == False:
+        # it is a downtrend.
+        order_target_percent(context.aapl, 0)
+    else:
+        # it is an uptrend.
+        if sma_20 > sma_50 and context.aapl not in open_orders:
+            order_target_percent(context.aapl, 1.0)
+        elif sma_50 > sma_20 and context.aapl not in open_orders: 
+            order_target_percent(context.aapl, -1.0)
